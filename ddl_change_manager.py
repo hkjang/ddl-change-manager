@@ -11,9 +11,10 @@ load_dotenv()
 
 # 환경 변수 가져오기
 DB_URL = os.getenv("DB_URL")
-GIT_REPO_PATH = os.getenv("GIT_REPO_PATH")
+GIT_REPO_URL = os.getenv("GIT_REPO_URL")
 OLLAMA_API_URL = os.getenv("OLLAMA_API_URL")
-DDL_CHANGE_LOG_DIR = os.path.join(GIT_REPO_PATH, "ddl_changes")
+DDL_CHANGE_LOG_DIR = os.path.join("ddl_changes")
+
 
 def get_current_ddl(engine):
     """
@@ -26,6 +27,7 @@ def get_current_ddl(engine):
             create_table_sql = connection.execute(f"SHOW CREATE TABLE {table_name}").fetchone()[1]
             ddl[table_name] = create_table_sql
     return ddl
+
 
 def save_ddl_to_file(version, ddl_content):
     """
@@ -45,6 +47,7 @@ def save_ddl_to_file(version, ddl_content):
     print(f"DDL 저장 완료: {file_path}")
     return file_name
 
+
 def load_previous_ddl(version):
     """
     이전 버전의 DDL 로드
@@ -63,6 +66,7 @@ def load_previous_ddl(version):
                 ddl[current_table] += line
     return ddl
 
+
 def compare_ddl(previous_ddl, current_ddl):
     """
     DDL 비교
@@ -76,6 +80,7 @@ def compare_ddl(previous_ddl, current_ddl):
                 lineterm='', fromfile="previous", tofile="current"
             ))
     return diff
+
 
 def generate_commit_message_with_ollama(diff):
     """
@@ -102,30 +107,38 @@ def generate_commit_message_with_ollama(diff):
         print(f"Ollama API 호출 실패: {e}")
         return "DDL 변경 사항 업데이트"
 
+
 def git_commit_and_push(file_name, commit_message):
     """
     Git 저장소에 변경 사항 추가, 커밋, 푸시
     """
     try:
+        # 기존 원격 설정 초기화
+        subprocess.run(["git", "remote", "remove", "origin"], check=False)
+
+        # 새 원격 저장소 URL 설정
+        subprocess.run(["git", "remote", "add", "origin", GIT_REPO_URL], check=True)
+
         # Git add
-        subprocess.run(["git", "-C", GIT_REPO_PATH, "add", os.path.join("ddl_changes", file_name)], check=True)
+        subprocess.run(["git", "add", os.path.join(DDL_CHANGE_LOG_DIR, file_name)], check=True)
 
         # Git commit
-        subprocess.run(["git", "-C", GIT_REPO_PATH, "commit", "-m", commit_message], check=True)
+        subprocess.run(["git", "commit", "-m", commit_message], check=True)
 
         # Git push
-        subprocess.run(["git", "-C", GIT_REPO_PATH, "push"], check=True)
+        subprocess.run(["git", "push", "-u", "origin", "main"], check=True)
 
         print("Git에 변경 사항 커밋 및 푸시 완료")
     except subprocess.CalledProcessError as e:
         print(f"Git 작업 실패: {e}")
 
+
 def manage_ddl_change(version):
     """
     DDL 변경 관리
     """
-    if not DB_URL or not OLLAMA_API_URL:
-        print("데이터베이스 URL 또는 Ollama API URL이 설정되지 않았습니다. .env 파일을 확인하세요.")
+    if not DB_URL or not OLLAMA_API_URL or not GIT_REPO_URL:
+        print("필수 환경 변수(DB_URL, OLLAMA_API_URL, GIT_REPO_URL)가 설정되지 않았습니다. .env 파일을 확인하세요.")
         return
 
     engine = create_engine(DB_URL)
@@ -155,6 +168,7 @@ def manage_ddl_change(version):
 
     # Git 커밋 및 푸시
     git_commit_and_push(file_name, commit_message)
+
 
 # 사용 예시
 if __name__ == "__main__":
